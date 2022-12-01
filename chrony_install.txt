@@ -1,0 +1,218 @@
+#!/bin/bash
+function CheckInstalledChrony 
+{
+    if [ -z "$( dnf list installed chrony 2> /dev/null | grep -i chrony | awk '{print $1}' )" ]; then
+        sudo dnf install chrony
+        systemctl start chronyd.service
+        systemctl enable chronyd.service
+        sudo cp /etc/chrony.conf /etc/conf.backup.time
+    fi
+}
+
+function ParseArg
+{
+    IFS=$','
+    unset argArray[@]
+    local i=0
+    for arg in $*
+    do
+        argArray[$i]=$arg
+        i=$(( $i+1 ))
+    done
+    IFS=$'\t\n'
+}
+
+function ActivServerPeer
+{
+    key_s="-s"
+    ipArray=$*
+    ParseArg $ipArray
+    countServer=0
+    for ip in ${argArray[@]}
+    do
+        listServer[$countServer]="Server $ip minpoll 4 maxpoll 6 iburst"
+        countServer=$(( countServer+1 ))
+    done
+}
+
+function ActivPreferServerPeer
+{
+    key_p="-p"
+    preferArray=$*
+    ParseArg $preferArray
+    local i=0
+    for value in ${argArray[@]}
+    do
+        preferArgArray[$i]=${value}
+        i=$(( $i+1 ))
+    done
+    if [ -n $key_s ]; then
+        for prefer in ${preferArgArray[@]}
+        do
+            if [ $prefer -gt 0 ] && [ $prefer -le $countServer ]; then
+                prefer=$(( $prefer-1 ))
+                listServer[$prefer]=${listServer[$prefer]}" prefer"
+            else
+                echo "Неверный параметр. Обратитесь в справку для ознакомления с использованием скрипта -h или --help"
+            fi
+        done
+    fi
+}
+
+function PrintToFile
+{
+    #Path to file config
+    pathToConf="/etc/chrony.conf"
+    
+    #Write text configuration
+    if [ -n "$key_s" ]; then
+        if [ -z "$( grep "#server ntp" $pathToConf )" ]; then
+            for (( i=1; i <= 4; i++ ))
+            do
+                sed -i "s/server ntp$i.vniiftri.ru iburst/#server ntp$i.vniiftri.ru iburst/" $pathToConf
+            done
+        fi
+        local numPosition=$( grep -n -m1 "^[[:space:]]*$" $pathToConf | awk -F":" '{print $1}' )
+        sed -i "$numPosition s/^[[:space:]]*$/\n# Servers set administrator\n/" $pathToConf
+        for enumServer in ${listServer[@]}
+        do
+            numPosition=$(( numPosition+1 ))
+            sed -i "$(($numPosition+1)) s/^[[:space:]]*$/$enumServer\n/" $pathToConf
+        done
+    fi
+    if [ -n "$key_S" ]; then
+        numPosition=$( grep -n "driftfile /var/lib/chrony/drift" $pathToConf | awk -F":" '{print $1}')
+        sed -i "$(( $numPosition+1 )) s/^[[:space:]]*$/local stratum 9 \nallow \n/" $pathToConf
+    fi
+}
+
+function Reset {
+    sudo rm /etc/chrony.conf
+    sudo cp /etc/conf.backup.time /etc/chrony.conf 
+}
+
+function CreateCommand {
+    if [ -n $key_s ]; then
+        key_s="$key_s $ipArray"
+    fi
+    if [ -n $key_p ]; then
+        key_p="$key_p $preferArray"
+    fi
+    echo "Сгенерированный ключ:
+./chrony_install $key_s $key_p $key_S"
+}
+
+function Help 
+{
+    echo "Данный скрипт выполняет настройку демона chrony. Ниже описана инструкция использования.
+
+Скрипт имеет несколько ключей для ввода параметров:
+-s - нужен для настройки синхронизации с сервером точного времени, в качестве параметра нужно указать IP адрес сервера.
+-p - нужен для установки метки prefer предпочтительным серверам точного времени, в качестве параметра нужно указать номер по порядку из списка заднных ip адресов.
+-S - нужен для включения локального сервера точного времени, не имеет параметров.
+-h и --help - вызов справки.
+Запуск скрипта с параметрами производится по следующему шаблону: ./chrony_install KEY [PARAMETER] KEY [PARAMETER] ...
+или ./chrony_install KEY [PARAMETER,PARAMETER...] KEY [PARAMETER,PARAMETER...] ...
+Параметры задаются через запятую [,] и без пробелов.
+Пример запуска скрипта: ./chrony_install -s 1.1.1.1,2.2.2.2,3.3.3.3 -p 1,3 -S
+
+Запустив скрипт без параметров позволит произвести настройку в интерактивном режиме"
+}
+
+function StartMenu
+{
+    echo
+    echo "Выберите необходимую настройку:
+    1) Настроить синхронизацию с сервером точного времени
+    2) Включить раздачу точного времени
+    3) Сброс настроек
+    4) Справка
+    5) Выйти и применить настройки"
+    echo
+}
+#CheckInstalledChrony
+#This block perform, if is have't parameters
+if [ -z "$1" ]; then
+    IsInteractiveMode="true"
+    while [ "$IsInteractiveMode" = "true" ]
+    do
+        StartMenu
+        read -p "Укажите номер выбранного пункта: " itemSetting
+        echo
+        case "$itemSetting" in
+        1)  while [ -z "$ipArray" ]
+            do
+                echo
+                read -p "Укажите ip адрес сервера точного времени, если адресов несколько, 
+то укажите их через запятую[,] без пробелов: " ipArray
+                if [ -n "$ipArray" ]; then
+                    ipArray=$( echo $ipArray | awk '{gsub(" ",","); print}' )
+                    ActivServerPeer $ipArray
+                fi
+                echo
+                while [ -z $key_p ]
+                do
+                    id=1
+                    for ip in ${argArray[@]}
+                    do    
+                        echo "$id: [ $ip ]"
+                        id=$(( $id+1 ))
+                    done
+                    read -p "Укажите номер ip адреса предпочтительного сервера, если адресов несколько, 
+то укажите номера порядка через запятую[,] без пробелов,
+для пропуска нажмите [Enter]: " preferArray
+                
+                    if [ $preferArray -le $countServer ] && [ $preferArray -gt 0 ]; then
+                        ActivPreferServerPeer $preferArray
+                    elif [ -z "$preferArray" ]; then
+                        break
+                    else
+                        echo
+                        echo "Неверный параметр. Обратитесь в справку для ознакомления с использованием скрипта -h или --help"
+                        echo
+                    fi
+
+                done
+            done 
+            unset itemSetting ;;
+        2)  settingServer="true"
+            key_S="-S"
+            unset itemSetting ;;
+        3)  Reset
+            unset itemSetting ;;
+        4)  Help
+            unset itemSetting ;;
+        5) IsInteractiveMode="false" ;;
+        *) unset itemSetting ;;
+        esac
+    done
+    if [ -n "$key_s" ] || [ -n "$key_p" ] || [ -n "$key_S" ]; then
+        echo
+        read -p "Вам сформировать команду по ключам с указанными параметрами? [y/n] [n] " yesno
+        if [ $yesno = "y" ]; then
+            CreateCommand
+        fi
+    fi
+fi
+#This block perform, if is have parameters
+while [ -n "$1" ]
+do
+    case "$1" in
+        -s) shift
+            ActivServerPeer $1 
+            ActivPreferServerPeer ;;
+        -p) shift
+            ActivPreferServerPeer $1 ;;
+        -S) key_S="-S" ;;
+        -R) Reset ;;
+        -h) Help 
+            exit ;;
+        --help) Help 
+                exit ;;
+         *) Help 
+            exit ;;
+    esac
+    shift
+done
+PrintToFile
+systemctl restart chronyd.service
