@@ -135,7 +135,7 @@ function StartMenu
     5) Выйти и применить настройки"
     echo
 }
-#CheckInstalledChrony
+CheckInstalledChrony
 #This block perform, if is have't parameters
 if [ -z "$1" ]; then
     IsInteractiveMode="true"
