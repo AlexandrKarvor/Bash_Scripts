@@ -62,7 +62,8 @@ function ActivPreferServerPeer
 function PrintToFile
 {
     #Path to file config
-    pathToConf="/etc/chrony.conf"
+    #pathToConf="/etc/chrony.conf"
+    pathToConf="geekfile"
     
     #Write text configuration
     if [ -n "$key_s" ]; then
@@ -81,9 +82,14 @@ function PrintToFile
         done
     fi
     if [ -n "$key_S" ]; then
-        numPosition=$( grep -n "driftfile /var/lib/chrony/drift" $pathToConf | awk -F":" '{print $1}')
-        sed -i "$(( $numPosition+1 )) s/^[[:space:]]*$/local stratum 9 \nallow \n/" $pathToConf
+        numPosition=$( grep -n "driftfile /var/lib/chrony/drift" $pathToConf | awk -F":" '{print $1 + 1}')
+        sed -i "$numPosition s/^[[:space:]]*$/local stratum 9 \nallow \n/" $pathToConf
     fi
+    if [ -z "$( grep "maxchange" $pathToConf )" ]; then
+        numPosition=$( grep -n "makestep" $pathToConf | awk -F":" '{print $1 + 1}' )
+        sed -i "$numPosition s/^[[:space:]]*$/maxchange 60 1 2\n/" $pathToConf
+    fi
+
 }
 
 function Reset {
