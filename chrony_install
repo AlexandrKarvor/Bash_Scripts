@@ -81,7 +81,7 @@ function PrintToFile
         done
     fi
     if [ -n "$key_S" ]; then
-        numPosition=$( grep -n "driftfile /var/lib/chrony/drift" $pathToConf | awk -F":" '{print $1 + 1}')
+        numPosition=$( grep -n "driftfile" $pathToConf | awk -F":" '{print $1 + 1}')
         sed -i "$numPosition s/^[[:space:]]*$/local stratum 9 \nallow \n/" $pathToConf
     fi
     if [ -z "$( grep "maxchange" $pathToConf )" ]; then
