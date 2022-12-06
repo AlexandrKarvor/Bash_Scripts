@@ -1,11 +1,37 @@
 #!/bin/bash
+function CheckSystem
+{
+    system="$( grep "ID_LIKE" /etc/os-release | awk -F"=" -F"\"" '{print $2}' )"
+    if [ "rhel centos fedora" = "$system" ]; then
+        pathToConf="/etc/chrony.conf"
+        OS="redos"
+    elif [ "debian" = "$system" ]; then
+        pathToConf="/etc/chrony/chrony.conf"
+        OS="astra"
+    else
+        echo "Ваша операционная система не определена"
+        exit
+    fi
+}
 function CheckInstalledChrony 
 {
-    if [ -z "$( dnf list installed chrony 2> /dev/null | grep -i chrony | awk '{print $1}' )" ]; then
-        sudo dnf install chrony
-        systemctl start chronyd.service
-        systemctl enable chronyd.service
-        sudo cp /etc/chrony.conf /etc/conf.backup.time
+    if [ "redos" = "$OS" ]; then
+        if [ -z "$( dnf list installed chrony 2> /dev/null | grep -i chrony | awk '{print $1}' )" ]; then
+            sudo dnf install chrony
+            systemctl start chronyd.service
+            systemctl enable chronyd.service
+            sudo cp /etc/chrony.conf /etc/conf.backup.time
+        fi
+    elif [ "astra" = "$OS" ]; then
+        if [ -z "$( apt --installed list 2> /dev/null | grep -i chrony | awk -F"/" '{print $1}')" ]; then
+            sudo apt-get install chrony
+            systemctl start chrony.service
+            systemctl enable chrony.service
+            sudo cp /etc/chrony/chrony.conf /etc/chrony/conf.backup.time
+        fi
+    else
+        echo "Произошла ошибка при проверке установки демона chrony"
+        exit
     fi
 }
 
@@ -61,9 +87,6 @@ function ActivPreferServerPeer
 
 function PrintToFile
 {
-    #Path to file config
-    pathToConf="/etc/chrony.conf"
-    
     #Write text configuration
     if [ -n "$key_s" ]; then
         if [ -z "$( grep "#server ntp" $pathToConf )" ]; then
@@ -91,9 +114,18 @@ function PrintToFile
 
 }
 
-function Reset {
-    sudo rm /etc/chrony.conf
-    sudo cp /etc/conf.backup.time /etc/chrony.conf 
+function Reset
+{
+    if [ "redos" = "$OS" ]; then
+        sudo rm /etc/chrony.conf
+        sudo cp /etc/conf.backup.time /etc/chrony.conf
+    elif [ "astra" = "$OS" ]; then
+        sudo rm /etc/chrony/chrony.conf
+        sudo cp /etc/chrony/conf.backup.time /etc/chrony/chrony.conf
+    else
+        echo "Произошла ошибка при сбросе конфигурации"
+    fi
+
 }
 
 function CreateCommand {
@@ -135,7 +167,8 @@ function StartMenu
     5) Выйти и применить настройки"
     echo
 }
-#CheckInstalledChrony
+CheckSystem
+CheckInstalledChrony
 #This block perform, if is have't parameters
 if [ -z "$1" ]; then
     IsInteractiveMode="true"
