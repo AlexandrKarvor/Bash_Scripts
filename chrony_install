@@ -1,7 +1,7 @@
 #!/bin/bash
 function CheckSystem
 {
-    system="$( grep "ID_LIKE" /etc/os-release | awk -F"=" -F"\"" '{print $2}' )"
+    system="$( grep "ID_LIKE" geekfile | awk -F'=' '{print $2}' | awk '{gsub("\"",""); print}' )"
     if [ "rhel centos fedora" = "$system" ]; then
         pathToConf="/etc/chrony.conf"
         OS="redos"
