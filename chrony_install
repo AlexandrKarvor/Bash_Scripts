@@ -50,15 +50,22 @@ function ParseArg
 
 function ActivServerPeer
 {
-    key_s="-s"
     ipArray=$*
     ParseArg $ipArray
     countServer=0
     for ip in ${argArray[@]}
     do
-        listServer[$countServer]="Server $ip minpoll 4 maxpoll 6 iburst"
-        countServer=$(( countServer+1 ))
+        local correct="$( echo $ip | awk -F"." '{if ( NF != 4 ) print "stop"; 
+        else if ( $1 > 0 && $1 < 255 && $2 >= 0 && $2 < 255 && $3 >= 0 && $3 < 255 && $4 >= 0 && $4 < 255 ) print $ip;
+        else print "stop"}' )"
+        if [ "$correct" = "stop" ];then 
+            echo $"Скрипт завершился с ошибкой. IP адрес не корректный. Введите корректный IP адрес"; exit 
+        else
+            listServer[$countServer]="Server $ip minpoll 4 maxpoll 6 iburst"
+            countServer=$(( countServer+1 ))
+        fi
     done
+    key_s="-s"
 }
 
 function ActivPreferServerPeer
@@ -101,8 +108,7 @@ function PrintToFile
         done
     fi
     if [ -n "$key_S" ]; then
-        numPosition=$( grep -n "driftfile" $pathToConf | awk -F":" '{print $1 + 1}')
-        sed -i "$numPosition s/^[[:space:]]*$/local stratum 9 \nallow \n/" $pathToConf
+        sed -i  "/driftfile/s/$/\nlocal stratum 9 \nallow \n/" $pathToConf
     fi
     if [ -z "$( grep "maxchange" $pathToConf )" ]; then
         sed -i  "/makestep/s/$/\nmaxchange 60 1 2/" $pathToConf
@@ -142,6 +148,7 @@ function Help
 -s - нужен для настройки синхронизации с сервером точного времени, в качестве параметра нужно указать IP адрес сервера.
 -p - нужен для установки метки prefer предпочтительным серверам точного времени, в качестве параметра нужно указать номер по порядку из списка заднных ip адресов.
 -S - нужен для включения локального сервера точного времени, не имеет параметров.
+-R - нужен для сброса пользовательских настроек
 -h и --help - вызов справки.
 Запуск скрипта с параметрами производится по следующему шаблону: ./chrony_install KEY [PARAMETER] KEY [PARAMETER] ...
 или ./chrony_install KEY [PARAMETER,PARAMETER...] KEY [PARAMETER,PARAMETER...] ...
