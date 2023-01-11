@@ -1,11 +1,37 @@
 #!/bin/bash
+function CheckSystem
+{
+    system="$( grep "ID_LIKE" /etc/os-release | awk -F'=' '{print $2}' | awk '{gsub("\"",""); print}' )"
+    if [ "rhel centos fedora" = "$system" ]; then
+        pathToConf="/etc/chrony.conf"
+        OS="redos"
+    elif [ "debian" = "$system" ]; then
+        pathToConf="/etc/chrony/chrony.conf"
+        OS="astra"
+    else
+        echo "Ваша операционная система не определена"
+        exit
+    fi
+}
 function CheckInstalledChrony 
 {
-    if [ -z "$( dnf list installed chrony 2> /dev/null | grep -i chrony | awk '{print $1}' )" ]; then
-        sudo dnf install chrony
-        systemctl start chronyd.service
-        systemctl enable chronyd.service
-        sudo cp /etc/chrony.conf /etc/conf.backup.time
+    if [ "redos" = "$OS" ]; then
+        if [ -z "$( dnf list installed chrony 2> /dev/null | grep -i chrony | awk '{print $1}' )" ]; then
+            sudo dnf install chrony
+            systemctl start chronyd.service
+            systemctl enable chronyd.service
+            sudo cp /etc/chrony.conf /etc/conf.backup.time
+        fi
+    elif [ "astra" = "$OS" ]; then
+        if [ -z "$( apt --installed list 2> /dev/null | grep -i chrony | awk -F"/" '{print $1}')" ]; then
+            sudo apt-get install chrony
+            systemctl start chrony.service
+            systemctl enable chrony.service
+            sudo cp /etc/chrony/chrony.conf /etc/chrony/conf.backup.time
+        fi
+    else
+        echo "Произошла ошибка при проверке установки демона chrony"
+        exit
     fi
 }
 
@@ -24,15 +50,22 @@ function ParseArg
 
 function ActivServerPeer
 {
-    key_s="-s"
     ipArray=$*
     ParseArg $ipArray
     countServer=0
     for ip in ${argArray[@]}
     do
-        listServer[$countServer]="Server $ip minpoll 4 maxpoll 6 iburst"
-        countServer=$(( countServer+1 ))
+        local correct="$( echo $ip | awk -F"." '{if ( NF != 4 ) print "domainName"; 
+        else if ( $1 > 0 && $1 < 255 && $2 >= 0 && $2 < 255 && $3 >= 0 && $3 < 255 && $4 >= 0 && $4 < 255 ) print $ip;
+        else print "stop"}' )"
+        if [ "$correct" = "stop" ];then 
+            echo $"Скрипт завершился с ошибкой. IP адрес не корректный. Введите корректный IP адрес"; exit 
+        else
+            listServer[$countServer]="Server $ip minpoll 4 maxpoll 6 iburst"
+            countServer=$(( countServer+1 ))
+        fi
     done
+    key_s="-s"
 }
 
 function ActivPreferServerPeer
@@ -61,16 +94,10 @@ function ActivPreferServerPeer
 
 function PrintToFile
 {
-    #Path to file config
-    pathToConf="/etc/chrony.conf"
-    
     #Write text configuration
     if [ -n "$key_s" ]; then
-        if [ -z "$( grep "#server ntp" $pathToConf )" ]; then
-            for (( i=1; i <= 4; i++ ))
-            do
-                sed -i "s/server ntp$i.vniiftri.ru iburst/#server ntp$i.vniiftri.ru iburst/" $pathToConf
-            done
+        if [ -z "$( grep "iburst" $pathToConf | awk '/#/{print $0}' )" ]; then
+            sed -i "/iburst/s/^/#/" $pathToConf
         fi
         local numPosition=$( grep -n -m1 "^[[:space:]]*$" $pathToConf | awk -F":" '{print $1}' )
         sed -i "$numPosition s/^[[:space:]]*$/\n# Servers set administrator\n/" $pathToConf
@@ -81,19 +108,25 @@ function PrintToFile
         done
     fi
     if [ -n "$key_S" ]; then
-        numPosition=$( grep -n "driftfile" $pathToConf | awk -F":" '{print $1 + 1}')
-        sed -i "$numPosition s/^[[:space:]]*$/local stratum 9 \nallow \n/" $pathToConf
+        sed -i  "/driftfile/s/$/\nlocal stratum 9 \nallow \n/" $pathToConf
     fi
     if [ -z "$( grep "maxchange" $pathToConf )" ]; then
-        numPosition=$( grep -n "makestep" $pathToConf | awk -F":" '{print $1 + 1}' )
-        sed -i "$numPosition s/^[[:space:]]*$/maxchange 60 1 2\n/" $pathToConf
+        sed -i  "/makestep/s/$/\nmaxchange 60 1 2/" $pathToConf
     fi
-
 }
 
-function Reset {
-    sudo rm /etc/chrony.conf
-    sudo cp /etc/conf.backup.time /etc/chrony.conf 
+function Reset
+{
+    if [ "redos" = "$OS" ]; then
+        sudo rm /etc/chrony.conf
+        sudo cp /etc/conf.backup.time /etc/chrony.conf
+    elif [ "astra" = "$OS" ]; then
+        sudo rm /etc/chrony/chrony.conf
+        sudo cp /etc/chrony/conf.backup.time /etc/chrony/chrony.conf
+    else
+        echo "Произошла ошибка при сбросе конфигурации"
+    fi
+
 }
 
 function CreateCommand {
@@ -115,6 +148,7 @@ function Help
 -s - нужен для настройки синхронизации с сервером точного времени, в качестве параметра нужно указать IP адрес сервера.
 -p - нужен для установки метки prefer предпочтительным серверам точного времени, в качестве параметра нужно указать номер по порядку из списка заднных ip адресов.
 -S - нужен для включения локального сервера точного времени, не имеет параметров.
+-R - нужен для сброса пользовательских настроек
 -h и --help - вызов справки.
 Запуск скрипта с параметрами производится по следующему шаблону: ./chrony_install KEY [PARAMETER] KEY [PARAMETER] ...
 или ./chrony_install KEY [PARAMETER,PARAMETER...] KEY [PARAMETER,PARAMETER...] ...
@@ -135,6 +169,10 @@ function StartMenu
     5) Выйти и применить настройки"
     echo
 }
+<<<<<<< HEAD
+=======
+CheckSystem
+>>>>>>> develop
 CheckInstalledChrony
 #This block perform, if is have't parameters
 if [ -z "$1" ]; then
